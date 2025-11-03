@@ -80,19 +80,19 @@ def report_status(request):
 @api_view(["GET", "POST"])
 def predict(request):
     try:
-        location = request.GET.get("location")
+        if request.method == "GET":
+            location = request.GET.get("location")
+        elif request.method == "POST":
+            location = request.data.get("location")
 
-        # Validate location parameter
         if not location:
             return Response({
                 "success": False,
-                "error": "Missing 'location' query parameter.",
+                "error": "Missing 'location' field.",
                 "status": 400
-            }, status=status.HTTP_200_OK)
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Run prediction logic
         data = predict_light_status(location)
-
         return Response({
             "success": True,
             "data": data,
@@ -102,6 +102,6 @@ def predict(request):
     except Exception as e:
         return Response({
             "success": False,
-            "error": f"Internal error: {str(e)}",
+            "error": str(e),
             "status": 500
-        }, status=status.HTTP_200_OK)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
