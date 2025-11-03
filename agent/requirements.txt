@@ -1,0 +1,15 @@
+# Core framework
+Django>=4.2,<6.0
+djangorestframework>=3.15
+
+# Environment variables
+python-dotenv>=1.0.1
+
+# WSGI server (for production handling)
+gunicorn>=21.2.0
+
+# Optional utilities
+whitenoise>=6.6.0     # Serves static files easily in production
+tzdata>=2024.1        # Ensures correct timezone support (esp. Africa/Lagos)
+
+requests>=2.31.0
