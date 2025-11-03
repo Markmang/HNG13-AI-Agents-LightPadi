@@ -2,49 +2,47 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from .models import PowerReport
-from .ai_engine import predict_light_status, NIGERIAN_CITIES
-from .utils import extract_city_from_text, extract_message_text
+from .ai_engine import predict_light_status
+from .utils import extract_latest_message_text, extract_city_from_text, extract_power_status_from_text, NIGERIAN_CITIES
+
+
+@api_view(["GET"])
+def ping(request):
+    return Response({
+        "status": "ok",
+        "app": "LightPadi running live on PythonAnywhere",
+        "version": "v1.0.0"
+    }, status=status.HTTP_200_OK)
 
 
 @api_view(["POST"])
 def report_status(request):
     """
-    Handles user reports like 'There is light in Lagos' or 'No light in Enugu'.
-    Extracts the city and status, stores it, and responds with a friendly message.
+    Handles user reports like "There is light in Lagos" or "No light in Enugu".
+    Saves to the database and returns a friendly acknowledgment.
     """
     try:
-        message = request.data.get("message", {})
-        text = extract_message_text(message)
+        message_data = request.data.get("message", {})
+        user_text = extract_latest_message_text(message_data)
+        city = extract_city_from_text(user_text)
+        power_status = extract_power_status_from_text(user_text)
 
-        if not text:
+        if not city:
+            return Response({
+                "text": "🇳🇬 Sorry, LightPadi currently supports only major Nigerian cities. Please include one like 'Lagos' or 'Enugu'."
+            }, status=200)
+
+        if not power_status:
             return Response({
                 "text": "🤔 I didn’t quite catch that. Please say something like 'There is light in Lagos'."
-            }, status=status.HTTP_200_OK)
+            }, status=200)
 
-        location = extract_city_from_text(text)
-        if not location:
-            return Response({
-                "text": "🤔 I couldn’t find any Nigerian city in your message. Try again with a valid city name!"
-            }, status=status.HTTP_200_OK)
+        PowerReport.objects.create(location=city, status=power_status)
 
-        if location not in NIGERIAN_CITIES:
-            return Response({
-                "text": f"🇳🇬 Sorry, LightPadi currently supports only major Nigerian cities. '{location}' isn’t in my list yet."
-            }, status=status.HTTP_200_OK)
-
-        # Detect ON or OFF based on message content
-        status_ = "off" if any(word in text.lower() for word in ["no light", "off", "dark"]) else "on"
-
-        # Save report to DB
-        PowerReport.objects.create(location=location, status=status_)
-
-        message = (
-            f"✅ LightPadi: Got it! Power is currently ON in {location}. Thanks for the update 💡."
-            if status_ == "on"
-            else f"⚡ LightPadi: Thanks for the report! Power is OFF in {location}. I’ll remember that."
-        )
-
-        return Response({"text": message}, status=status.HTTP_200_OK)
+        emoji = "✅" if power_status == "on" else "❌"
+        return Response({
+            "text": f"{emoji} LightPadi: Got it! Power is currently {power_status.upper()} in {city}. Thanks for the update 💡."
+        }, status=status.HTTP_200_OK)
 
     except Exception as e:
         return Response({
@@ -52,51 +50,45 @@ def report_status(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(["POST"])
+@api_view(["POST", "GET"])
 def predict(request):
     """
-    Predicts power status for a given city.
-    Handles messages like 'Check light in Lagos' or 'Predict Enugu'.
+    Predicts current or future power status for a city.
+    Uses the latest message only, ignoring old chat history from Telex.
     """
     try:
-        message = request.data.get("message", {})
-        text = extract_message_text(message)
-        location = extract_city_from_text(text)
+        message_data = request.data.get("message", {})
+        user_text = extract_latest_message_text(message_data)
+        city = extract_city_from_text(user_text)
 
-        if not text:
-            return Response({
-                "text": "🤔 Please tell me which city you’d like to check. Example: 'Predict light in Lagos'."
-            }, status=status.HTTP_200_OK)
-
-        if not location:
+        if not city:
             return Response({
                 "text": "🤔 LightPadi couldn’t find any Nigerian city in your request. Try: 'Predict light in Lagos' or 'Check Enugu status'."
-            }, status=status.HTTP_200_OK)
+            }, status=200)
 
-        if location not in NIGERIAN_CITIES:
+        # Handle unsupported cities
+        if city not in NIGERIAN_CITIES:
             return Response({
-                "text": f"🇳🇬 Sorry, LightPadi currently supports only major Nigerian cities. '{location}' isn’t in my list yet."
-            }, status=status.HTTP_200_OK)
+                "text": "🇳🇬 Sorry, LightPadi currently supports only major Nigerian cities."
+            }, status=200)
 
-        data = predict_light_status(location)
+        prediction_data = predict_light_status(city)
 
-        message = f"🔆 LightPadi: {data['message']} (Confidence: {data['confidence']})"
+        # Format AI prediction nicely for Telex
+        if prediction_data.get("prediction") == "unsupported":
+            message = prediction_data["message"]
+        elif prediction_data.get("prediction") == "unknown":
+            message = f"🔆 LightPadi: {prediction_data['message']} (Confidence: {prediction_data['confidence']})"
+        elif prediction_data.get("prediction") == "off":
+            message = f"⚡ LightPadi: Based on recent reports, {city} may experience a power outage soon. (Confidence: {prediction_data['confidence']})"
+        else:
+            message = f"🔆 LightPadi: Power looks stable in {city} right now. (Confidence: {prediction_data['confidence']})"
 
         return Response({"text": message}, status=status.HTTP_200_OK)
 
     except Exception as e:
         return Response({
-            "text": f"⚠️ LightPadi ran into an error while processing your request: {str(e)}"
+            "text": f"⚠️ LightPadi encountered an error: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(["GET"])
-def ping(request):
-    """
-    Simple health check endpoint to verify deployment and version.
-    """
-    return Response({
-        "status": "ok",
-        "message": "LightPadi is live and connected ⚡",
-        "version": "v1.2.3"
-    }, status=status.HTTP_200_OK)

@@ -1,46 +1,65 @@
 import re
-from .ai_engine import NIGERIAN_CITIES
+
+# Full list of Nigerian state capitals + major cities
+NIGERIAN_CITIES = [
+    "Abakaliki", "Abeokuta", "Abuja", "Ado Ekiti", "Akure", "Asaba", "Awka", "Bauchi", "Benin City",
+    "Birnin Kebbi", "Calabar", "Damaturu", "Lagos", "Enugu", "Gombe", "Gusau", "Ibadan", "Ilorin",
+    "Jalingo", "Jos", "Kaduna", "Kano", "Katsina", "Lafia", "Lokoja", "Maiduguri", "Makurdi",
+    "Minna", "Oshogbo", "Ondo", "Owerri", "Port Harcourt", "Sokoto", "Umuahia", "Uyo", "Yenagoa",
+    "Yola", "Aba", "Onitsha", "Warri"
+]
 
 
-def extract_message_text(telex_message: dict) -> str:
+def extract_latest_message_text(message_data):
     """
-    Extracts user-readable text from Telex messages,
-    safely handling nested parts and data arrays.
+    Extracts the most recent relevant text from a Telex-style message.
+    Focuses only on the last 2–3 parts to avoid confusion from older chat history.
     """
-    parts = telex_message.get("parts", [])
-    texts = []
+    try:
+        parts = message_data.get("parts", [])
+        if not parts:
+            return ""
 
-    for part in parts:
-        # Direct text
-        if "text" in part and part["text"].strip():
-            texts.append(part["text"].strip())
+        # Consider only the last few parts (latest messages)
+        recent_parts = parts[-3:]
 
-        # Nested 'data'
-        if "data" in part:
-            for data_part in part["data"]:
-                if "text" in data_part and data_part["text"].strip():
-                    texts.append(data_part["text"].strip())
+        texts = []
+        for part in recent_parts:
+            if part.get("kind") == "text":
+                texts.append(part.get("text", ""))
+            elif part.get("kind") == "data":
+                for sub in part.get("data", []):
+                    if sub.get("kind") == "text":
+                        texts.append(sub.get("text", ""))
 
-    return texts[-1] if texts else ""
+        combined = " ".join(texts).strip()
+        return combined
+    except Exception:
+        return ""
 
 
-def extract_city_from_text(text: str):
+def extract_city_from_text(text):
     """
-    Extract the first valid Nigerian city name from user input.
+    Identifies a Nigerian city name from the text.
+    Returns None if no known city is found.
     """
-    text = text.strip().title()
+    if not text:
+        return None
 
-    # Try "in {city}" pattern first
-    match = re.search(r"\b(?:in|at|from|location)\s+([A-Z][a-zA-Z\s]+)", text)
-    if match:
-        possible_city = match.group(1).strip()
-        for city in NIGERIAN_CITIES:
-            if city.lower() in possible_city.lower():
-                return city
-
-    # Fallback: direct name match
     for city in NIGERIAN_CITIES:
-        if city.lower() in text.lower():
+        pattern = rf"\b{re.escape(city)}\b"
+        if re.search(pattern, text, re.IGNORECASE):
             return city
+    return None
 
+
+def extract_power_status_from_text(text):
+    """
+    Extracts a user's report of 'light on' or 'light off' from text.
+    """
+    text = text.lower()
+    if any(word in text for word in ["no light", "light off", "nepa take light", "power outage", "blackout"]):
+        return "off"
+    elif any(word in text for word in ["light is on", "light on", "there is light", "nepa bring light", "power restored"]):
+        return "on"
     return None
