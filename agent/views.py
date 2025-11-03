@@ -3,50 +3,81 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from .models import PowerReport
-from .ai_engine import predict_light_status
+from .ai_engine import predict_light_status, NIGERIAN_CITIES
 
 
 @api_view(["POST"])
 def report_status(request):
     try:
+        # Try direct JSON fields first
         location = request.data.get("location")
         status_ = request.data.get("status")
 
-        # Validate input fields
+        # Fallback: parse Telex text message
+        if not location or not status_:
+            text = ""
+            if isinstance(request.data, dict):
+                message = request.data.get("message", {})
+                parts = message.get("parts", [])
+                if parts:
+                    for part in parts:
+                        if part.get("kind") == "text":
+                            text += part.get("text", " ")
+            else:
+                text = str(request.data)
+
+            text_lower = text.lower()
+
+            # Detect city from master list
+            for city in NIGERIAN_CITIES:
+                if city.lower() in text_lower:
+                    location = city
+                    break
+
+            # Detect light status
+            if any(word in text_lower for word in [
+                "light is on", "light dey", "power is back", "there is light", "nepa bring light"
+            ]):
+                status_ = "on"
+            elif any(word in text_lower for word in [
+                "no light", "light is off", "power is out", "nepa take light", "light don go"
+            ]):
+                status_ = "off"
+
+        # Handle missing data gracefully
         if not location or not status_:
             return Response({
                 "success": False,
-                "error": "Missing 'location' or 'status' field.",
+                "message": (
+                    "😕 LightPadi couldn't understand your report.\n\n"
+                    "Try something like:\n"
+                    "- 'There is light in Lagos'\n"
+                    "- 'No light in Enugu'\n"
+                    "- 'NEPA take light for Abuja'\n\n"
+                    "I currently support major Nigerian cities only 🇳🇬."
+                ),
                 "status": 400
-            }, status=status.HTTP_200_OK)
+            }, status=status.HTTP_200_OK)  # <-- Return 200 so Telex shows message, not error
 
-        # Validate status field value
-        if status_.lower() not in ["on", "off"]:
-            return Response({
-                "success": False,
-                "error": "Invalid status value. Must be 'on' or 'off'.",
-                "status": 422
-            }, status=status.HTTP_200_OK)
-
-        # Save new report
-        PowerReport.objects.create(location=location.strip(), status=status_.lower())
+        # Save valid report
+        PowerReport.objects.create(location=location.title(), status=status_.lower())
 
         return Response({
             "success": True,
-            "message": f"Report received: {location.title()} light is {status_.lower()}.",
+            "message": f"✅ LightPadi: Report received — {location.title()} light is {status_.lower()}.",
             "status": 200
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
         return Response({
             "success": False,
-            "error": f"Internal error: {str(e)}",
+            "message": f"❌ LightPadi encountered an error: {str(e)}",
             "status": 500
-        }, status=status.HTTP_200_OK)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 def predict(request):
     try:
         location = request.GET.get("location")
