@@ -10,31 +10,46 @@ NIGERIAN_CITIES = [
 ]
 
 
+
+
 def extract_latest_message_text(message_data):
     """
-    Extracts the most recent relevant text from a Telex-style message.
-    Focuses only on the last 2–3 parts to avoid confusion from older chat history.
+    Extracts the most recent one or two user message texts from Telex message payload.
+    Handles both 'parts' and nested 'data' messages.
     """
     try:
         parts = message_data.get("parts", [])
         if not parts:
             return ""
 
-        # Consider only the last few parts (latest messages)
-        recent_parts = parts[-3:]
-
         texts = []
-        for part in recent_parts:
-            if part.get("kind") == "text":
-                texts.append(part.get("text", ""))
-            elif part.get("kind") == "data":
-                for sub in part.get("data", []):
-                    if sub.get("kind") == "text":
-                        texts.append(sub.get("text", ""))
 
-        combined = " ".join(texts).strip()
-        return combined
-    except Exception:
+        for part in parts:
+            # Handle normal text messages
+            if part.get("kind") == "text" and part.get("text"):
+                texts.append(part["text"].strip())
+
+            # Handle nested 'data' text blocks (Telex format)
+            if part.get("kind") == "data":
+                for d in part.get("data", []):
+                    if d.get("kind") == "text" and d.get("text"):
+                        texts.append(d["text"].strip())
+
+        if not texts:
+            return ""
+
+        # Combine the last two messages (Telex sometimes splits messages)
+        latest_texts = texts[-2:] if len(texts) > 1 else texts[-1:]
+        combined_text = " ".join(latest_texts)
+
+        # Remove HTML tags like <p></p>
+        combined_text = re.sub(r"<.*?>", "", combined_text)
+
+        # Clean whitespace and lowercase for consistency
+        return combined_text.strip().lower()
+
+    except Exception as e:
+        print(f"⚠️ Error extracting text: {e}")
         return ""
 
 
