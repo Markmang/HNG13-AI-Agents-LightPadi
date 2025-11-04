@@ -10,8 +10,6 @@ NIGERIAN_CITIES = [
 ]
 
 
-
-
 def extract_latest_message_text(message_data):
     """
     Extracts the most recent one or two user message texts from Telex message payload.
@@ -46,7 +44,10 @@ def extract_latest_message_text(message_data):
         combined_text = re.sub(r"<.*?>", "", combined_text)
 
         # Clean whitespace and lowercase for consistency
-        return combined_text.strip().lower()
+        clean_text = combined_text.strip().lower()
+
+        print(f"🧠 Extracted latest user text: {clean_text}")  # for debugging
+        return clean_text
 
     except Exception as e:
         print(f"⚠️ Error extracting text: {e}")
@@ -61,9 +62,13 @@ def extract_city_from_text(text):
     if not text:
         return None
 
+    # Remove punctuation to catch cities followed by commas, etc.
+    text_clean = re.sub(r"[^\w\s]", "", text)
+
     for city in NIGERIAN_CITIES:
-        pattern = rf"\b{re.escape(city)}\b"
-        if re.search(pattern, text, re.IGNORECASE):
+        pattern = rf"\b{re.escape(city.lower())}\b"
+        if re.search(pattern, text_clean.lower()):
+            print(f"🏙️ City detected: {city}")
             return city
     return None
 
@@ -71,10 +76,24 @@ def extract_city_from_text(text):
 def extract_power_status_from_text(text):
     """
     Extracts a user's report of 'light on' or 'light off' from text.
+    Returns 'on', 'off', or None.
     """
     text = text.lower()
-    if any(word in text for word in ["no light", "light off", "nepa take light", "power outage", "blackout"]):
+
+    # 'No light' scenarios
+    if any(word in text for word in [
+        "no light", "light off", "nepa take light", "power outage", "blackout",
+        "no electricity", "power gone", "light don go"
+    ]):
+        print("💡 Power status detected: OFF")
         return "off"
-    elif any(word in text for word in ["light is on", "light on", "there is light", "nepa bring light", "power restored"]):
+
+    # 'Light on' scenarios
+    elif any(word in text for word in [
+        "light is on", "light on", "there is light", "nepa bring light",
+        "power restored", "light dey", "power don come"
+    ]):
+        print("💡 Power status detected: ON")
         return "on"
+
     return None

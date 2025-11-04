@@ -1,14 +1,9 @@
 from django.urls import path
-from . import views
+from .views import PingView, RouterView, ReportStatusView, PredictView
 
 urlpatterns = [
-    # Health check endpoint
-    path("ping/", views.ping, name="ping"),
-
-    # Universal router endpoint (Telex can send all messages here)
-    path("router/", views.router, name="router"),
-
-    # Dedicated endpoints (optional if you want to call directly)
-    path("report/", views.report_status, name="report_status"),
-    path("predict/", views.predict, name="predict"),
+    path("ping", PingView.as_view(), name="ping"),
+    path("router", RouterView.as_view(), name="router"),
+    path("report", ReportStatusView.as_view(), name="report"),
+    path("predict", PredictView.as_view(), name="predict"),
 ]
